@@ -1,0 +1,142 @@
+---
+title: "ggheatmap"
+author: "Philip Sweet"
+date: "April 9, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(cowplot)
+library(DESeq2)
+
+```
+
+This markdown demonstrates taking DEseq2 Log2FC output and producing a geom_tile based heatmap (adding clustering with faceting) as well as using the pheatmap package (that clusters by default).  The clustering for the geom_title method would need to be done elsewhere, and loaded into R as a variable tied to gene.ID
+
+In this demo, I will be loading in pre-exported DEseq2 results. Here is the code needed to produce the .csv that I am starting with 
+
+## Set up the design
+dds <- DESeqDataSetFromMatrix(countData = countdata, colData = coldata, design = ~Stress)
+
+## extract the total data
+ddsObj <- DESeq(dds)
+
+## View result names 
+resultsNames(ddsObj)
+
+## extract the desired comparision by name
+res_0v1 <- results(ddsTC, name = "Stress_1_vs_0" ) 
+
+## Format and export data 
+resOrdered <- res_0v1[order(res_0v1$padj),]
+resOrderedDF <- as.data.frame(resOrdered)
+write.csv(resOrderedDF, file="DEseq_results.csv")
+
+
+Now for the Dyplr approach.
+
+First, let's tidy up that data. First, we'll load in the DEseq data we want to use. Ideally, all of these files are in one folder and you can provide a path to them with a specific pattern like (.csv). Also if you name your files uniformly, you can easily turn that into your columns, which makes tidying data easy.
+```{r}
+
+## RNAseq data
+data_path <- ("~/Documents/GitHub/DEseq2_heatmap")   # path to the data
+files <- dir(data_path, pattern = "*fc.csv") # get file names
+data <- data_frame(filename = files) %>% # create a data frame
+                                         # holding the file names
+  mutate(file_contents = map(filename,          # read files into
+           ~ read_csv(file.path(data_path, .))) # a new data column
+        )  %>%
+unnest() -> seq_data
+
+seq_data %>% separate(filename, into= c("Media","Stress","file"), sep = "_", remove = TRUE) -> seq_data1
+
+## Read in some list of genes to filter by (or you could look at top FC)
+
+uniKB <- read.csv("UniprotBT.csv", header = TRUE)
+
+```
+
+Now all we need to do is join the FC with the gene class data and we can make a nice heat map!
+
+```{r}
+
+
+left_join(uniKB, seq_data1, by = "Gene.ID") %>%
+  filter(Stress_Class == "SOS") %>%
+  ggplot(aes(Stress, Gene_name, fill = log2FoldChange)) +
+  scale_fill_gradient(low = "white", high = "red", na.value = NA) +
+  geom_tile(color = "white") +
+  ggtitle("Activation of SOS System Under Stress") +
+  theme_cowplot()
+
+```
+
+If we want to get fancy and sort by some form of grouping factor, we can do that! I'm going to use the class for a cluster, but you could use anything, and if you use ~anythign~. It's not as nice looking as pheatmap.
+
+```{r}
+
+left_join(uniKB, seq_data1, by = "Gene.ID") %>%
+  filter(Stress_Class != "")  %>%
+  filter(Stress != "")-> select_genes
+  
+  ## Use facet to sort the genes by cluster
+  
+  select_genes %>%
+  ggplot(aes(Gene.ID, Stress, fill = log2FoldChange)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red", na.value = NA) +
+  facet_grid(~Cluster, switch = "x", scales = "free_x", space = "free_x") +
+  theme(strip.placement = "outside",
+        strip.background = element_rect(fill = "#EEEEEE", color = "#FFFFFF"),
+        axis.text.x = element_blank()) +
+  labs(x ="Cluster") +
+  ggtitle("DE Expressed Genes by Cluster") +
+  theme_bw()
+
+
+```
+
+
+
+
+
+Lets look at pheatmap. This package takes a matrix, in the same format as DEseq spits out into results.No NAs are allowed, and you don't want any identifying info besides FCs and samples. Every column needs to be numeric, so check that if you're getting errors. Also, I just made some extra columns with sin()/cos() in there for fun. 
+```{r}
+
+library(pheatmap)
+
+seq_data1 %>% select(Gene.ID, Stress, log2FoldChange) %>%
+  pivot_wider(names_from = Stress, values_from = log2FoldChange) %>% 
+  top_n(500) %>%
+  mutate(ShamGy = as.numeric(sin(ShamGy))) %>%
+  mutate(NewGy = as.numeric(cos(ShamGy)*5))  %>%
+  mutate(OneGy = as.numeric(OneGy))  %>%
+  mutate(FortyGy = as.numeric(FortyGy)) -> map_datas
+
+pheatmap(map_datas[,-1],
+        annotation_names_row=FALSE,
+        annotation_names_col=TRUE,
+        fontsize_col=10)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
