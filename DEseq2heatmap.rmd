@@ -73,13 +73,21 @@ left_join(uniKB, seq_data1, by = "Gene.ID") %>%
 
 ```
 
-If we want to get fancy and sort by some form of grouping factor, we can do that! I'm going to use the class for a cluster, but you could use anything, and if you use ~anythign~. It's not as nice looking as pheatmap.
+If we want to get fancy and sort by some form of grouping factor, you have two options... 
+
+1. Use facet wrapping to box each cluster seperately, this works well if you only have a few cluster or want to clealry mark or label the clusters 
+
+2. Use dyplr to define a location. This creates a very continuous graph, most like the pheatmap
+
 
 ```{r}
 
+
+## Select only genes that fall within your clusters
+
 left_join(uniKB, seq_data1, by = "Gene.ID") %>%
   filter(Stress_Class != "")  %>%
-  filter(Stress != "")-> select_genes
+  filter(Stress != "") -> select_genes 
   
   ## Use facet to sort the genes by cluster
   
@@ -94,15 +102,56 @@ left_join(uniKB, seq_data1, by = "Gene.ID") %>%
   labs(x ="Cluster") +
   ggtitle("DE Expressed Genes by Cluster") +
   theme_bw()
-
+  
+  ## Ad location data 
+  select_genes %>%
+  group_by(Stress) %>% 
+  arrange(Cluster) %>%
+  mutate(Location = 1:n()) -> ord_genes 
+  
+  
+  ord_genes   %>%
+  ggplot(aes(Location, Stress, fill = log2FoldChange)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red", na.value = NA) +
+  ggtitle("DE Expressed Genes by Cluster") +
+  theme_bw()
+  
+  ## You can add your orginal gene names, by changing the label source
+  
+  select_genes  %>%
+    mutate(Cluster = as.numeric(Cluster)) %>%
+    filter(Cluster >= 11) %>%
+    group_by(Stress) %>% 
+    arrange(Cluster) %>%
+    mutate(Location = 1:n()) %>%
+    droplevels() -> ord_genes
+  
+  ggplot(ord_genes, aes(Location, Stress, fill = log2FoldChange)) +
+  geom_tile() +
+  geom_tile(aes(color = as.factor(Cluster)), alpha = 0.1, size = 1) +
+  scale_fill_gradient(low = "white", high = "red", na.value = NA) +
+  scale_color_grey(start = 0, end = .9) +
+  ggtitle("DE Expressed Genes Cluster 11,12 & 13") +
+  scale_x_continuous(breaks = ord_genes$Location, labels= ord_genes$Gene_name) +
+  coord_flip() +
+  theme_bw()
+  
+  ## I don't like this, but you could use the color vs fill to define your clusters while keeping the log2Fc data
+  
+  ggplot(ord_genes, aes(Location, Stress, fill = log2FoldChange)) +
+  geom_tile() +
+  geom_tile(aes(color = as.factor(Cluster)), alpha = 0.1, size = 1) +
+  scale_fill_gradient(low = "white", high = "red", na.value = NA) +
+  scale_color_grey(start = 0, end = .9) +
+  ggtitle("DE Expressed Genes Cluster 11,12 & 13") +
+  scale_x_continuous(breaks = ord_genes$Location, labels= ord_genes$Gene_name) +
+  coord_flip() +
+   theme_bw()
 
 ```
-
-
-
-
-
 Lets look at pheatmap. This package takes a matrix, in the same format as DEseq spits out into results.No NAs are allowed, and you don't want any identifying info besides FCs and samples. Every column needs to be numeric, so check that if you're getting errors. Also, I just made some extra columns with sin()/cos() in there for fun. 
+
 ```{r}
 
 library(pheatmap)
